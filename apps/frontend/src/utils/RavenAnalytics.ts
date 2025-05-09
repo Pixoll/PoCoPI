@@ -1,4 +1,4 @@
-// apps/frontend/src/utils/RavenAnalytics.ts
+
 export type InteractionType =
   | "view" // Viewing a question
   | "select" // Selecting an option
@@ -606,20 +606,82 @@ export function saveResultsToStorage(results: TestResults): void {
 }
 
 // Function to upload data to server (simulated)
-export function uploadResults(results: TestResults): Promise<Response> {
-  // This function should be implemented to send data to your backend
-  // Here we just simulate an upload
-  console.log("Sending results to server...", results);
+export function uploadResults(results: TestResults): Promise<{success: boolean; message?: string; data?: any}>{
+  try {
+    // Add timestamp if not present
+    if (!results.endTime) {
+      results.endTime = Date.now();
+      results.totalTime = results.endTime - results.startTime;
+    }
 
-  // Simulate a fetch request
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(
-        new Response(JSON.stringify({ success: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
+    const response = await fetch('/api/raven-results', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('authToken')}` // Opcional: para autenticación
+      },
+      body: JSON.stringify({
+        ...results,
+        sentAt: new Date().toISOString() // Agregar marca de tiempo de envío
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.message || 
+        `Server error: ${response.status} ${response.statusText}`
       );
-    }, 500);
-  });
+    }
+
+    const data = await response.json();
+    
+    // Opcional: Guardar confirmación de envío exitoso
+    localStorage.setItem(
+      `last_upload_${results.participantId}`,
+      JSON.stringify({ success: true, time: new Date().toISOString() })
+    );
+
+    return data;
+  } catch (error) {
+    console.error('Error uploading results:', error);
+    
+    // Guardar en localStorage para reintento posterior
+    const pendingKey = `pending_upload_${results.participantId}`;
+    const pendingUploads = JSON.parse(localStorage.getItem(pendingKey) || '[]');
+    pendingUploads.push(results);
+    localStorage.setItem(pendingKey, JSON.stringify(pendingUploads));
+    
+    throw error;
+  }
+}
+
+//Funcion to make fetch to the backend
+export async function uploadResultsToServer(results: TestResults): Promise<void>{
+  try {
+    const keys = Object.keys(localStorage);
+    const pendingKeys = keys.filter(key => key.startsWith('pending_upload_'));
+    
+    for (const key of pendingKeys) {
+      const uploads = JSON.parse(localStorage.getItem(key) || '[]');
+      
+      for (const result of uploads) {
+        try {
+          await uploadResultsToServer(result);
+          // Si tiene éxito, eliminar del almacenamiento pendiente
+          const newUploads = uploads.filter((u: TestResults) => u.participantId !== result.participantId);
+          if (newUploads.length > 0) {
+            localStorage.setItem(key, JSON.stringify(newUploads));
+          } else {
+            localStorage.removeItem(key);
+          }
+        } catch (error) {
+          console.error(`Failed to retry upload for participant ${result.participantId}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error retrying pending uploads:', error);
+  }
+ 
 }
