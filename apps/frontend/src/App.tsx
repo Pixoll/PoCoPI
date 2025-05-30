@@ -1,7 +1,7 @@
 // Punto de entrada principal para la aplicación frontend del test.
 // Gestiona la navegación global, el theming y el estado de nivel superior.
 
-import { CompletionModal } from "@/components/HomePage/CompletionModal";
+import { CompletionModal } from "@/pages/CompletionModal";
 import { ThemeProvider } from "@/contexts/ThemeProvider";
 import { useTheme } from "@/hooks/useTheme";
 import { AnalyticsDashboard } from "@/pages/AnalyticsDashboard";
